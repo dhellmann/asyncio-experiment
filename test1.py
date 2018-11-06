@@ -99,7 +99,6 @@ class Dispatcher:
             handler = self._handlers[project_id]
         finally:
             self._lock.release()
-        #await handler.send(event)
         if event is None:
             await self.stop()
         else:
@@ -148,7 +147,6 @@ async def notification_consumer(dispatcher, q):
             log.info('STOPPING')
             q.task_done()
             break
-        #await handle_notification(dispatcher, event)
         loop.create_task(handle_notification(dispatcher, event))
         q.task_done()
 
