@@ -141,12 +141,6 @@ class Dispatcher:
             await asyncio.wait(handler_tasks)
 
 
-async def handle_notification(dispatcher, event):
-    # pretend to get the project_id from the event
-    project_id = event.get('project_id')
-    await dispatcher.dispatch(project_id, event)
-
-
 async def notification_consumer(dispatcher, q):
     log = logging.getLogger('notification_consumer')
     log.info('starting')
@@ -154,11 +148,16 @@ async def notification_consumer(dispatcher, q):
     while True:
         log.debug('waiting')
         event = await q.get()
+
         if event is None:
             log.info('STOPPING')
             q.task_done()
             break
-        loop.create_task(handle_notification(dispatcher, event))
+
+        # pretend to get the project_id from the event
+        project_id = event.get('project_id')
+        await dispatcher.dispatch(project_id, event)
+
         q.task_done()
 
 
