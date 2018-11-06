@@ -117,7 +117,7 @@ class SubscriptionHandler:
         self._data = subscription
         self._project_id = subscription['project_id']
         self._patterns = subscription['parameters']['event']
-        self._log = logging.getLogger('SubscriptionHandler.{}'.format(self._project_id))
+        self._log = logging.getLogger(str(self))
         # Limit the queue size so we don't read more events than we
         # can send back out.
         self._q = asyncio.Queue(maxsize=1)
@@ -126,6 +126,10 @@ class SubscriptionHandler:
             error_handler(self._consumer(), self._project_id)
         )
         self._log.info('new subscription %s', self._patterns)
+
+    def __str__(self):
+        return 'SubscriptionHandler.{}.{}'.format(
+            self._project_id, self._patterns)
 
     def match(self, event_id):
         return any(
