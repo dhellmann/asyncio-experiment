@@ -146,8 +146,8 @@ class SubscriptionHandler:
                 self._log.info('received <stop signal>')
                 break
             self._log.info('received %s', event)
-            await asyncio.sleep(0.2)
             # FIXME: Pretending to do something with the event.
+            await asyncio.sleep(0.1)
 
     async def send(self, event):
         self._log.info('sending %s', event or '<stop signal>')
