@@ -21,7 +21,7 @@ FAKE_EVENTS = [
 ]
 
 # This should come from a configuration option
-NUM_CONCURRENT = 100
+NUM_CONCURRENT = 10
 
 
 async def error_handler(coroutine, name):
@@ -41,9 +41,12 @@ async def produce_events(q):
             try:
                 await q.put({'project_id': event})
                 log.info('NEW EVENT %s', event)
-                await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 return
+        try:
+            await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            return
         # End fake data production
 
 
@@ -139,7 +142,7 @@ async def notification_consumer(dispatcher, q):
     log.info('starting')
     loop = asyncio.get_event_loop()
     while True:
-        log.info('waiting')
+        log.debug('waiting')
         event = await q.get()
         if event is None:
             log.info('STOPPING')
@@ -152,9 +155,8 @@ async def notification_consumer(dispatcher, q):
 
 async def _stop(signame, producer, dispatcher, q):
     LOG.info('STOPPING on %s', signame)
-    #await producer.stop()
     producer.cancel()
-    # Stop the consumer
+    # Stop the consumer by sending it a poison pill
     await q.put(None)
     await dispatcher.stop()
 
