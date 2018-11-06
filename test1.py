@@ -31,14 +31,15 @@ async def notification_producer(q):
 
 class ProjectHandler:
 
-    def __init__(self, project_id, event_loop):
+    def __init__(self, project_id):
         self._log = logging.getLogger('ProjectHandler.{}'.format(project_id))
         self._log.info('new handler')
         self._project_id = project_id
         self._q = asyncio.Queue()
-        self.task = event_loop.create_task(self._consumer(event_loop))
+        loop = asyncio.get_event_loop()
+        self.task = loop.create_task(self._consumer())
 
-    async def _consumer(self, event_loop):
+    async def _consumer(self):
         while True:
             self._log.debug('consumer waiting')
             event = await self._q.get()
@@ -60,11 +61,10 @@ class Dispatcher:
 
     _log = logging.getLogger('Dispatcher')
 
-    def __init__(self, event_loop):
+    def __init__(self):
         self._keep_running = True
         self._lock = asyncio.Lock()
         self._handlers = {}
-        self._event_loop = event_loop
 
     async def dispatch(self, project_id, event):
         if not self._keep_running:
@@ -74,8 +74,7 @@ class Dispatcher:
         await self._lock.acquire()
         try:
             if project_id not in self._handlers:
-                self._handlers[project_id] = ProjectHandler(project_id,
-                                                          self._event_loop)
+                self._handlers[project_id] = ProjectHandler(project_id)
             handler = self._handlers[project_id]
         finally:
             self._lock.release()
@@ -122,14 +121,15 @@ async def notification_consumer(dispatcher, q):
         await handle_notification(dispatcher, event)
 
 
-async def main(event_loop):
+async def main():
 
     q = asyncio.Queue(maxsize=NUM_CONCURRENT)
-    dispatcher = Dispatcher(event_loop)
-    consumer_task = event_loop.create_task(
+    dispatcher = Dispatcher()
+    loop = asyncio.get_event_loop()
+    consumer_task = loop.create_task(
         notification_consumer(dispatcher, q)
     )
-    producer_task = event_loop.create_task(
+    producer_task = loop.create_task(
         notification_producer(q)
     )
 
@@ -150,6 +150,6 @@ if __name__ == '__main__':
 
     event_loop = asyncio.get_event_loop()
     try:
-        event_loop.run_until_complete(main(event_loop))
+        event_loop.run_until_complete(main())
     finally:
         event_loop.close()
