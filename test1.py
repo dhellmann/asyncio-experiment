@@ -39,7 +39,7 @@ class Producer:
         self._q = q
         event_loop = asyncio.get_event_loop()
         event_loop.add_signal_handler(signal.SIGINT, self._stop)
-        self._run = True
+        self._run = 3
 
     def _sigint(self):
         self._log.info('sigint')
@@ -47,17 +47,19 @@ class Producer:
 
     def _stop(self):
         self._log.info('stopping')
-        self._run = False
+        self._run = 0
 
     async def produce(self):
         self._log.info('starting')
         while self._run:
+            self._log.info('iteration %d', self._run)
             self._log.info('%d events', len(FAKE_EVENTS))
             for event in FAKE_EVENTS:
                 await self._q.put({'project_id': event})
                 self._log.info('NEW EVENT %s', event)
             self._log.info('pausing')
             await asyncio.sleep(1)
+            self._run -= 1
         await self._q.put(None)
 
 
