@@ -49,16 +49,14 @@ async def produce_events(q):
         random.shuffle(to_send)
         for event in to_send:
             try:
-                await q.put({'project_id': event, 'num': i})
                 i += 1
+                await q.put({'project_id': event, 'num': i})
                 log.info('NEW EVENT %s', event)
             except asyncio.CancelledError:
+                # If we were canceled we didn't successfully enqueue
+                # the current value of i.
+                log.info('last num %d', i - 1)
                 return
-        try:
-            await asyncio.sleep(0.1)
-        except asyncio.CancelledError:
-            return
-        # End fake data production
 
 
 class ProjectHandler:
@@ -98,13 +96,12 @@ class Dispatcher:
     _log = logging.getLogger('Dispatcher')
 
     def __init__(self):
-        self._keep_running = True
         self._lock = asyncio.Lock()
         self._handlers = {}
 
     async def dispatch(self, project_id, event):
-        if not self._keep_running:
-            self._log.info('ignoring %s', event)
+        if event is None:
+            await self._stop()
             return
         self._log.info('got %s', event)
         await self._lock.acquire()
@@ -119,11 +116,10 @@ class Dispatcher:
         else:
             await handler.send(event)
 
-    async def stop(self):
+    async def _stop(self):
         await self._lock.acquire()
         try:
             self._log.info('stopping all %s handlers', len(self._handlers))
-            self._keep_running = False
             for project_id, handler in self._handlers.items():
                 await handler.stop()
         finally:
@@ -152,31 +148,32 @@ async def notification_consumer(dispatcher, q):
         log.debug('waiting')
         event = await q.get()
 
-        if event is None:
-            log.info('STOPPING')
-            q.task_done()
-            break
+        if event:
+            # pretend to get the project_id from the event
+            project_id = event.get('project_id')
+        else:
+            project_id = None
 
-        # pretend to get the project_id from the event
-        project_id = event.get('project_id')
         await dispatcher.dispatch(project_id, event)
-
         q.task_done()
 
+        if event is None:
+            log.info('STOPPING')
+            break
 
-async def _stop(signame, producer, dispatcher, q):
+
+async def _stop(signame, producer, q):
     LOG.info('STOPPING on %s', signame)
     producer.cancel()
-    # Stop the consumer by sending it a poison pill
+    # Stop the consumer and dispatcher by sending a poison pill
     await q.put(None)
-    await dispatcher.stop()
 
 
-def signal_handler(signame, producer, dispatcher, q):
+def signal_handler(signame, producer, q):
     LOG.info('scheduling shutdown')
     loop = asyncio.get_event_loop()
     loop.create_task(
-        error_handler(_stop(signame, producer, dispatcher, q),
+        error_handler(_stop(signame, producer, q),
                       '_stop'),
     )
 
@@ -196,7 +193,6 @@ async def main():
             signal_handler,
             signame='SIGINT',
             producer=producer_task,
-            dispatcher=dispatcher,
             q=q,
         ),
     )
