@@ -28,7 +28,7 @@ FAKE_EVENTS = [
 ]
 
 # This should come from a configuration option
-NUM_CONCURRENT = 10
+READ_AHEAD_MAX = 1
 
 
 async def error_handler(coroutine, name):
@@ -182,7 +182,7 @@ def signal_handler(signame, producer, dispatcher, q):
 async def main():
 
     loop = asyncio.get_event_loop()
-    q = asyncio.Queue(maxsize=NUM_CONCURRENT)
+    q = asyncio.Queue(maxsize=READ_AHEAD_MAX)
     dispatcher = Dispatcher()
     producer_task = loop.create_task(
         error_handler(produce_events(q), 'produce_events'),
