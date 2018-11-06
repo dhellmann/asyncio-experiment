@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import signal
 
 LOG = logging.getLogger()
 
@@ -22,15 +23,42 @@ FAKE_EVENTS = [
 NUM_CONCURRENT = 2
 
 
-async def notification_producer(q):
-    log = logging.getLogger('notification_producer')
-    log.info('starting')
-    for event in FAKE_EVENTS:
-        log.info('NEW EVENT %s', event)
-        await q.put({'project_id': event})
-    await q.put(None)
+async def error_handler(coroutine, name):
+    log = logging.getLogger('error_handler.{}'.format(name))
+    try:
+        await coroutine
+    except Exception as err:
+        log.traceback(err)
 
 
+class Producer:
+
+    _log = logging.getLogger('Producer')
+
+    def __init__(self, q):
+        self._q = q
+        event_loop = asyncio.get_event_loop()
+        event_loop.add_signal_handler(signal.SIGINT, self._stop)
+        self._run = True
+
+    def _sigint(self):
+        self._log.info('sigint')
+        self._stop()
+
+    def _stop(self):
+        self._log.info('stopping')
+        self._run = False
+
+    async def produce(self):
+        self._log.info('starting')
+        while self._run:
+            self._log.info('%d events', len(FAKE_EVENTS))
+            for event in FAKE_EVENTS:
+                await self._q.put({'project_id': event})
+                self._log.info('NEW EVENT %s', event)
+            self._log.info('pausing')
+            await asyncio.sleep(1)
+        await self._q.put(None)
 
 
 class ProjectHandler:
@@ -41,7 +69,7 @@ class ProjectHandler:
         self._project_id = project_id
         self._q = asyncio.Queue()
         loop = asyncio.get_event_loop()
-        self.task = loop.create_task(self._consumer())
+        self.task = loop.create_task(error_handler(self._consumer(), project_id))
 
     async def _consumer(self):
         while True:
@@ -103,8 +131,9 @@ class Dispatcher:
             ]
         finally:
             self._lock.release()
-        self._log.info('waiting for handler tasks to complete')
-        await asyncio.wait(handler_tasks)
+        if handler_tasks:
+            self._log.info('waiting for handler tasks to complete')
+            await asyncio.wait(handler_tasks)
 
 
 async def handle_notification(dispatcher, event):
@@ -121,8 +150,10 @@ async def notification_consumer(dispatcher, q):
         event = await q.get()
         if event is None:
             await dispatcher.stop()
+            q.task_done()
             break
         await handle_notification(dispatcher, event)
+        q.task_done()
 
 
 async def main():
@@ -131,14 +162,18 @@ async def main():
     dispatcher = Dispatcher()
     loop = asyncio.get_event_loop()
     consumer_task = loop.create_task(
-        notification_consumer(dispatcher, q)
+        error_handler(notification_consumer(dispatcher, q), 'consumer')
     )
+    producer = Producer(q)
     producer_task = loop.create_task(
-        notification_producer(q)
+        error_handler(producer.produce(), 'producer'),
     )
 
     await asyncio.wait([producer_task])
     LOG.info('producer finished')
+    LOG.info('waiting for queue')
+    await q.join()
+    LOG.info('queue done')
     LOG.info('waiting for dispatcher to finish')
     await asyncio.wait([dispatcher.wait()])
     LOG.info('dispatcher finished')
