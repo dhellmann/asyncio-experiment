@@ -87,7 +87,7 @@ async def error_handler(coroutine, name):
     try:
         await coroutine
     except Exception as err:
-        log.traceback(err)
+        log.exception(err)
 
 
 async def produce_events(q):
