@@ -128,11 +128,10 @@ class SubscriptionHandler:
         self._log.info('new subscription %s', self._patterns)
 
     def match(self, event_id):
-        for pat in self._patterns:
-            self._log.debug('testing %s against pattern: %s', event_id, pat)
-            if fnmatch.fnmatch(event_id, pat):
-                return True
-        return False
+        return any(
+            fnmatch.fnmatch(event_id, pat)
+            for pat in self._patterns
+        )
 
     async def _consumer(self):
         while True:
