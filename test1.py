@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import asyncio
+import fnmatch
 import functools
+import itertools
 import logging
 import random
 import signal
@@ -10,25 +12,74 @@ LOG = logging.getLogger()
 
 # Simulate project IDs we might get from rabbit
 FAKE_EVENTS = [
-    '5d65eb04-5661-4e8d-9b95-e195505eca67',
-    '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
-    '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
-    '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
-    '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
-    '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
-    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
-    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
-    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
-    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
-    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
-    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
-    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
-    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
-    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
+    {'project_id': '5d65eb04-5661-4e8d-9b95-e195505eca67',
+     'resource_id': 'R1',
+     'event': 'a.b.c',
+    },
+
+    {'project_id': '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
+     'resource_id': 'R2',
+     'event': 'a.b.c',  # ignored
+    },
+    {'project_id': '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
+     'resource_id': 'R3',
+     'event': 'd.e',
+    },
+
+    {'project_id': '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
+     'resource_id': 'R4',
+     'event': 'a.f',
+    },
+    {'project_id': '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
+     'resource_id': 'R5',
+     'event': 'g.h',  # ignored
+    },
+    {'project_id': '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
+     'resource_id': 'R6',
+     'event': 'g.h.i',
+    },
+
+    {'project_id': 'b2ac5681-95df-413e-af1c-74c0d70c3f12',
+     'resource_id': 'R7',
+     'event': 'a.b.c',
+    },
 ]
 
 # This should come from a configuration option
 READ_AHEAD_MAX = 1
+
+SUBSCRIPTIONS = [
+    {'project_id': '5d65eb04-5661-4e8d-9b95-e195505eca67',
+     'event': 'subscription.create',
+     'parameters': {
+         'event': ['a.*'],
+     }
+    },
+    {'project_id': '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
+     'event': 'subscription.create',
+     'parameters': {
+         'event': ['d.e'],
+     },
+    },
+    {'project_id': '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
+     'event': 'subscription.create',
+     'parameters': {
+         'event': ['a.f'],
+     },
+    },
+    {'project_id': '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
+     'event': 'subscription.create',
+     'parameters': {
+         'event': ['g.h.i'],
+     },
+    },
+    {'project_id': 'b2ac5681-95df-413e-af1c-74c0d70c3f12',
+     'event': 'subscription.create',
+     'parameters': {
+         'event': ['a.b.*'],
+     },
+    },
+]
 
 
 async def error_handler(coroutine, name):
@@ -50,7 +101,8 @@ async def produce_events(q):
         for event in to_send:
             try:
                 i += 1
-                await q.put({'project_id': event, 'num': i})
+                event['num'] = i
+                await q.put(event)
                 log.info('NEW EVENT %s', event)
             except asyncio.CancelledError:
                 # If we were canceled we didn't successfully enqueue
@@ -59,19 +111,28 @@ async def produce_events(q):
                 return
 
 
-class ProjectHandler:
+class SubscriptionHandler:
 
-    def __init__(self, project_id):
-        self._log = logging.getLogger('ProjectHandler.{}'.format(project_id))
-        self._log.info('new handler')
-        self._project_id = project_id
+    def __init__(self, subscription):
+        self._data = subscription
+        self._project_id = subscription['project_id']
+        self._patterns = subscription['parameters']['event']
+        self._log = logging.getLogger('SubscriptionHandler.{}'.format(self._project_id))
         # Limit the queue size so we don't read more events than we
         # can send back out.
         self._q = asyncio.Queue(maxsize=1)
         loop = asyncio.get_event_loop()
         self.task = loop.create_task(
-            error_handler(self._consumer(), project_id)
+            error_handler(self._consumer(), self._project_id)
         )
+        self._log.info('new subscription %s', self._patterns)
+
+    def match(self, event_id):
+        for pat in self._patterns:
+            self._log.debug('testing %s against pattern: %s', event_id, pat)
+            if fnmatch.fnmatch(event_id, pat):
+                return True
+        return False
 
     async def _consumer(self):
         while True:
@@ -103,24 +164,41 @@ class Dispatcher:
         if event is None:
             await self._stop()
             return
+
         self._log.info('got %s', event)
+        event_id = event.get('event')
+
         await self._lock.acquire()
         try:
-            if project_id not in self._handlers:
-                self._handlers[project_id] = ProjectHandler(project_id)
-            handler = self._handlers[project_id]
+            if event_id == 'subscription.create':
+                # Handle our own subscription events by creating new
+                # handlers.
+                # TODO: delete and update events for subscriptions
+                if project_id not in self._handlers:
+                    self._handlers[project_id] = []
+                self._handlers[project_id].append(SubscriptionHandler(event))
+            handlers = self._handlers.get(project_id, [])
         finally:
             self._lock.release()
-        if event is None:
-            await self.stop()
-        else:
-            await handler.send(event)
+
+        self._log.info('testing %d handlers for event id %s',
+                       len(handlers), event_id)
+        matched = 0
+        for handler in handlers:
+            if handler.match(event_id):
+                await handler.send(event)
+                matched += 1
+        self._log.info('matched %d times', matched)
+
+    @property
+    def _all_handlers(self):
+        return itertools.chain.from_iterable(self._handlers.values())
 
     async def _stop(self):
         await self._lock.acquire()
         try:
-            self._log.info('stopping all %s handlers', len(self._handlers))
-            for project_id, handler in self._handlers.items():
+            self._log.info('stopping all handlers')
+            for handler in self._all_handlers:
                 await handler.stop()
         finally:
             self._lock.release()
@@ -130,7 +208,7 @@ class Dispatcher:
         try:
             handler_tasks = [
                 h.task
-                for h in self._handlers.values()
+                for h in self._all_handlers
             ]
         finally:
             self._lock.release()
@@ -178,6 +256,11 @@ def signal_handler(signame, producer, q):
     )
 
 
+async def initialize_subscriptions(q):
+    for subscription in SUBSCRIPTIONS:
+        await q.put(subscription)
+
+
 async def main():
 
     loop = asyncio.get_event_loop()
@@ -199,6 +282,8 @@ async def main():
     consumer_task = loop.create_task(
         error_handler(notification_consumer(dispatcher, q), 'consumer')
     )
+
+    await initialize_subscriptions(q)
 
     LOG.info('running')
     await asyncio.wait([producer_task])
