@@ -113,8 +113,7 @@ class Dispatcher:
         if event is None:
             await self.stop()
         else:
-            loop = asyncio.get_event_loop()
-            loop.create_task(handler.send(event))
+            await handler.send(event)
 
     async def stop(self):
         await self._lock.acquire()
