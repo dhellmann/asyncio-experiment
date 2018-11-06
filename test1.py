@@ -10,15 +10,21 @@ LOG = logging.getLogger()
 
 # Simulate project IDs we might get from rabbit
 FAKE_EVENTS = [
-    '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
     '5d65eb04-5661-4e8d-9b95-e195505eca67',
+    '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
+    '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
     '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
-    '5d65eb04-5661-4e8d-9b95-e195505eca67',
-    '5e6e2d10-4c8e-4a78-8433-48754407dcd0',
-    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
+    '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
+    '5edcc66b-131d-47ad-a53a-b7071b1c0eb5',
+    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
+    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
+    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
     'b2ac5681-95df-413e-af1c-74c0d70c3f12',
     'f1e716dc-9c47-4607-99fd-6aad3c597b69',
-    'b2ac5681-95df-413e-af1c-74c0d70c3f12',
+    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
+    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
+    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
+    'f1e716dc-9c47-4607-99fd-6aad3c597b69',
 ]
 
 # This should come from a configuration option
