@@ -32,33 +32,19 @@ async def error_handler(coroutine, name):
         log.traceback(err)
 
 
-class Producer:
-
-    _log = logging.getLogger('Producer')
-
-    def __init__(self, q):
-        self._q = q
-        self._run = True
-
-    async def stop(self):
-        if self._run:
-            self._log.info('stopping')
-            self._run = False
-        else:
-            self._log.info('already stopping')
-
-    async def produce(self):
-        self._log.info('starting')
-        while self._run:
-            self._log.info('iteration %d', self._run)
-            # This would really read from rabbitmq
-            for event in FAKE_EVENTS:
-                if not self._run:
-                    break
-                await self._q.put({'project_id': event})
-                self._log.info('NEW EVENT %s', event)
+async def produce_events(q):
+    log = logging.getLogger('produce')
+    log.info('starting')
+    while True:
+        # This would really read from rabbitmq
+        for event in FAKE_EVENTS:
+            try:
+                await q.put({'project_id': event})
+                log.info('NEW EVENT %s', event)
                 await asyncio.sleep(0.1)
-            # End fake data production
+            except asyncio.CancelledError:
+                return
+        # End fake data production
 
 
 class ProjectHandler:
@@ -166,7 +152,8 @@ async def notification_consumer(dispatcher, q):
 
 async def _stop(signame, producer, dispatcher, q):
     LOG.info('STOPPING on %s', signame)
-    await producer.stop()
+    #await producer.stop()
+    producer.cancel()
     # Stop the consumer
     await q.put(None)
     await dispatcher.stop()
@@ -183,20 +170,25 @@ def signal_handler(signame, producer, dispatcher, q):
 
 async def main():
 
+    loop = asyncio.get_event_loop()
     q = asyncio.Queue(maxsize=NUM_CONCURRENT)
     dispatcher = Dispatcher()
-    producer = Producer(q)
+    producer_task = loop.create_task(
+        error_handler(produce_events(q), 'produce_events'),
+    )
 
-    loop = asyncio.get_event_loop()
     loop.add_signal_handler(
         signal.SIGINT,
-        functools.partial(signal_handler, 'SIGINT', producer, dispatcher, q),
+        functools.partial(
+            signal_handler,
+            signame='SIGINT',
+            producer=producer_task,
+            dispatcher=dispatcher,
+            q=q,
+        ),
     )
     consumer_task = loop.create_task(
         error_handler(notification_consumer(dispatcher, q), 'consumer')
-    )
-    producer_task = loop.create_task(
-        error_handler(producer.produce(), 'producer'),
     )
 
     LOG.info('running')
