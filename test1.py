@@ -167,7 +167,7 @@ class Dispatcher:
 
     async def dispatch(self, project_id, event):
         if event is None:
-            await self._stop()
+            await error_handler(self._stop(), 'dispatch stop')
             return
 
         self._log.info('got %s', event)
@@ -191,7 +191,7 @@ class Dispatcher:
         matched = 0
         for handler in handlers:
             if handler.match(event_id):
-                await handler.send(event)
+                await error_handler(handler.send(event), 'handler.send')
                 matched += 1
         self._log.info('matched %d times', matched)
 
@@ -237,7 +237,7 @@ async def notification_consumer(dispatcher, q):
         else:
             project_id = None
 
-        await dispatcher.dispatch(project_id, event)
+        await error_handler(dispatcher.dispatch(project_id, event), 'dispatch')
         q.task_done()
 
         if event is None:
@@ -288,7 +288,7 @@ async def main():
         error_handler(notification_consumer(dispatcher, q), 'consumer')
     )
 
-    await initialize_subscriptions(q)
+    await error_handler(initialize_subscriptions(q), 'initialize_subscriptions')
 
     LOG.info('running')
     await asyncio.wait([producer_task])
