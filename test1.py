@@ -67,7 +67,9 @@ class ProjectHandler:
         self._log = logging.getLogger('ProjectHandler.{}'.format(project_id))
         self._log.info('new handler')
         self._project_id = project_id
-        self._q = asyncio.Queue()
+        # Limit the queue size so we don't read more events than we
+        # can send back out.
+        self._q = asyncio.Queue(maxsize=1)
         loop = asyncio.get_event_loop()
         self.task = loop.create_task(error_handler(self._consumer(), project_id))
 
