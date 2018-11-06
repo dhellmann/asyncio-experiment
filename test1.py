@@ -138,6 +138,7 @@ class SubscriptionHandler:
         )
 
     async def _consumer(self):
+        # TODO: Set up client to copy the events to zaqar.
         while True:
             self._log.debug('waiting for event')
             event = await self._q.get()
@@ -146,6 +147,7 @@ class SubscriptionHandler:
                 break
             self._log.info('received %s', event)
             await asyncio.sleep(0.2)
+            # FIXME: Pretending to do something with the event.
 
     async def send(self, event):
         self._log.info('sending %s', event or '<stop signal>')
