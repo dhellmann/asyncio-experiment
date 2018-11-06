@@ -71,7 +71,9 @@ class ProjectHandler:
         # can send back out.
         self._q = asyncio.Queue(maxsize=1)
         loop = asyncio.get_event_loop()
-        self.task = loop.create_task(error_handler(self._consumer(), project_id))
+        self.task = loop.create_task(
+            error_handler(self._consumer(), project_id)
+        )
 
     async def _consumer(self):
         while True:
