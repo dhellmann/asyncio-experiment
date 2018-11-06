@@ -43,12 +43,14 @@ async def produce_events(q):
     log = logging.getLogger('produce')
     log.info('starting')
     to_send = FAKE_EVENTS[:]
+    i = 0
     while True:
         # This would really read from rabbitmq
         random.shuffle(to_send)
         for event in to_send:
             try:
-                await q.put({'project_id': event})
+                await q.put({'project_id': event, 'num': i})
+                i += 1
                 log.info('NEW EVENT %s', event)
             except asyncio.CancelledError:
                 return
