@@ -3,6 +3,7 @@
 import asyncio
 import functools
 import logging
+import random
 import signal
 
 LOG = logging.getLogger()
@@ -35,9 +36,11 @@ async def error_handler(coroutine, name):
 async def produce_events(q):
     log = logging.getLogger('produce')
     log.info('starting')
+    to_send = FAKE_EVENTS[:]
     while True:
         # This would really read from rabbitmq
-        for event in FAKE_EVENTS:
+        random.shuffle(to_send)
+        for event in to_send:
             try:
                 await q.put({'project_id': event})
                 log.info('NEW EVENT %s', event)
